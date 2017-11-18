@@ -77,7 +77,18 @@ class SelectorBIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+        best_num_components, min_BIC_score = None, None
+        for num_components in range(self.min_n_components, self.max_n_components+1):
+        	try:
+        		logL = self.base_model(num_components).score(self.X, self.lengths)
+        		logN = np.log(len(self.X))
+        		p = num_components ** 2 + 2 * len(self.X[0]) * num_components - 1
+        		BIC_score = -2 * logL + p * logN
+        		if min_BIC_score is None or min_BIC_score > BIC_score:
+        			best_num_components, min_BIC_score = num_components, BIC_score
+        	except:
+        		pass
+        return self.base_model(best_num_components)
 
 
 class SelectorDIC(ModelSelector):
@@ -94,7 +105,25 @@ class SelectorDIC(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+        best_num_components, max_DIC_score = None, None
+        for num_components in range(self.min_n_components, self.max_n_components+1):
+        	try:
+        		model = self.base_model(num_components)
+        		logPXi = model.score(self.X, self.lengths)
+        		sum_log = 0.
+        		count_log = 0
+        		for word in self.hwords.keys():
+        			if word != self.this_word:
+        				X_other, lengths_other = self.hwords[word]
+        				sum_log += model.score(X_other, lengths_other)
+        				count_log += 1
+        		DIC_score = logPXi - sum_log / count_log
+        		if max_DIC_score is None or max_DIC_score < DIC_score:
+        			best_num_components, max_DIC_score = num_components, DIC_score
+        	except:
+        		pass
+        return self.base_model(best_num_components)
+
 
 
 class SelectorCV(ModelSelector):
@@ -106,4 +135,23 @@ class SelectorCV(ModelSelector):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         # TODO implement model selection using CV
-        raise NotImplementedError
+        best_num_components, max_avg_LogL = None, None
+        for num_components in range(self.min_n_components, self.max_n_components+1):
+        	sum_LogL, count_LogL = 0., 0
+        	try:
+        		split_method = KFold(min(len(self.lengths), 3))
+        		for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+        			X_train, lengths_train = combine_sequences(cv_train_idx, self.sequences)
+        			X_test, lengths_test = combine_sequences(cv_test_idx, self.sequences)
+        			try:
+        				cv_model = self.base_model(num_components).fit(X_train, lengths_train)
+        				sum_LogL += cv_model.score(X_test, lengths_test)
+        				count_LogL += 1
+        			except:
+        				pass
+        		avg_LogL = sum_LogL / count_LogL
+        		if max_avg_LogL is None or max_avg_LogL < avg_LogL:
+        			max_avg_LogL, best_num_components = avg_LogL, num_components
+        	except:
+        		pass
+        return self.base_model(best_num_components)
